@@ -23,7 +23,7 @@ CIDRWHITELIST_URL = (
 GEOIP_URL   = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip.dat'
 GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat'
 GEOIP_CATEGORIES   = {'RU', 'CN'}
-GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU'}
+GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU', 'CATEGORY-IP-GEO-DETECT'}
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
