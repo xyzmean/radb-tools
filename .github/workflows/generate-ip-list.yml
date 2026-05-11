@@ -1,0 +1,70 @@
+name: Generate RU+CN IP List
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 3 * * *'   # daily at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch RU prefixes
+        run: python3 ip-country-ripe.py RU
+
+      - name: Fetch CN prefixes
+        run: python3 ip-country-ripe.py CN
+
+      - name: Combine and aggregate
+        run: |
+          python3 - <<'EOF'
+          import ipaddress
+          from aggregate_prefixes import aggregate_prefixes
+
+          lines = (
+              open("ip_RU.lst").read().split()
+              + open("ip_CN.lst").read().split()
+          )
+          result = sorted(
+              aggregate_prefixes(lines),
+              key=lambda x: ipaddress.ip_network(x),
+          )
+          with open("combined.lst", "w") as f:
+              f.write("\n".join(str(n) for n in result) + "\n")
+          print(f"Combined: {len(result)} prefixes")
+          EOF
+
+      - name: Filter disallow list
+        run: python3 filter-disallow.py combined.lst disallow.lst > ru_cn_final.lst
+
+      - name: Show stats
+        run: |
+          echo "Final prefix count: $(wc -l < ru_cn_final.lst)"
+
+      - name: Update latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          gh release delete latest --yes 2>/dev/null || true
+          git tag -f latest
+          git push -f origin latest
+          gh release create latest ru_cn_final.lst \
+            --title "RU+CN IP List ${DATE}" \
+            --notes "Auto-generated daily RU+CN IPv4 prefix list filtered by disallow.lst." \
+            --latest

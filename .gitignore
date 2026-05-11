@@ -129,6 +129,7 @@ dmypy.json
 .pyre/
 
 *.lst
+!disallow.lst
 *.bz2
 .DS_Store
 .vscode/

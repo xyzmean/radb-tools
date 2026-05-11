@@ -1,0 +1,10 @@
+# Domains and IPs excluded from the final RU+CN prefix list.
+# Supported formats:
+#   domain name   — resolved via DNS at generation time
+#   IPv4 address  — e.g. 8.8.8.8
+#   CIDR subnet   — e.g. 1.1.1.0/24
+#   AS number     — e.g. AS45102 (resolved to announced prefixes via RIPE API)
+
+txxx.porn
+aliexpress.ru
+AS45102
