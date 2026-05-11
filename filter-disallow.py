@@ -16,19 +16,21 @@ Usage: filter-disallow.py <prefixes.lst> <disallow.lst>
 """
 import re
 import sys
-import socket
 import ipaddress
 import requests
+import dns.resolver
 from aggregate_prefixes import aggregate_prefixes
 
 AS_RE = re.compile(r'^[Aa][Ss]\d+$')
 
+_resolver = dns.resolver.Resolver()
+_resolver.nameservers = ['77.88.8.8', '77.88.8.1']
+
 
 def resolve_host(host):
     try:
-        results = socket.getaddrinfo(host, None, socket.AF_INET)
-        return list({r[4][0] for r in results})
-    except OSError:
+        return [str(r) for r in _resolver.resolve(host, 'A')]
+    except Exception:
         return []
 
 
