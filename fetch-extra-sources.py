@@ -22,7 +22,7 @@ CIDRWHITELIST_URL = (
 )
 GEOIP_URL   = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip.dat'
 GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat'
-CATEGORIES  = {'RU', 'CN'}
+CATEGORIES  = {'RU', 'CN', 'CATEGORY-RU', 'CATEGORY-CN'}
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
@@ -114,7 +114,13 @@ def parse_geoip(data, target_codes):
 # Domain      { Type type = 1; string value = 2; }   (Type 2=Domain, 3=Full)
 
 def parse_geosite(data, target_codes):
-    RESOLVABLE = {2, 3}
+    """Return list of hostnames to resolve.
+
+    Type 2 (Domain suffix, e.g. 'yandex.ru') → emit both apex and www. prefix,
+    since subdomains cannot be enumerated but www covers most web traffic.
+    Type 3 (Full match) → emit as-is.
+    Types 0/1 (Plain/Regex) → skip, not resolvable via DNS.
+    """
     domains = []
     for f, wt, val in _iter_fields(data):
         if f != 1 or wt != 2:
@@ -131,8 +137,12 @@ def parse_geosite(data, target_codes):
                         dtype = val3
                     elif f3 == 2 and wt3 == 2:
                         dval = val3.decode()
-                if dval and dtype in RESOLVABLE:
-                    entry_domains.append(dval)
+                if dval:
+                    if dtype == 2:    # Domain suffix: try apex + www
+                        entry_domains.append(dval)
+                        entry_domains.append('www.' + dval)
+                    elif dtype == 3:  # Full match: exact hostname
+                        entry_domains.append(dval)
         if code in target_codes:
             domains.extend(entry_domains)
     return domains
