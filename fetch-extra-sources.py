@@ -22,7 +22,8 @@ CIDRWHITELIST_URL = (
 )
 GEOIP_URL   = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip.dat'
 GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat'
-CATEGORIES  = {'RU', 'CN', 'CATEGORY-RU'}
+GEOIP_CATEGORIES   = {'RU', 'CN'}
+GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU'}
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
@@ -171,14 +172,14 @@ def main():
     # 2. geoip.dat → RU + CN IPv4 CIDRs
     print('Fetching geoip.dat...', file=sys.stderr)
     geoip_data = requests.get(GEOIP_URL, timeout=60).content
-    geoip_nets = parse_geoip(geoip_data, CATEGORIES)
-    print(f'  {len(geoip_nets)} IPv4 CIDRs ({sorted(CATEGORIES)})', file=sys.stderr)
+    geoip_nets = parse_geoip(geoip_data, GEOIP_CATEGORIES)
+    print(f'  {len(geoip_nets)} IPv4 CIDRs ({sorted(GEOIP_CATEGORIES)})', file=sys.stderr)
     all_prefixes.extend(geoip_nets)
 
-    # 3. geosite.dat → RU + CN domains → resolve to IPs
+    # 3. geosite.dat → RU + CATEGORY-RU domains → resolve to IPs
     print('Fetching geosite.dat...', file=sys.stderr)
     geosite_data = requests.get(GEOSITE_URL, timeout=60).content
-    domains = list(set(parse_geosite(geosite_data, CATEGORIES)))
+    domains = list(set(parse_geosite(geosite_data, GEOSITE_CATEGORIES)))
     print(f'  {len(domains)} unique domains to resolve...', file=sys.stderr)
 
     resolved = 0
