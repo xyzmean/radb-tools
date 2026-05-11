@@ -24,13 +24,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Fetch RU prefixes
+      - name: Fetch RU prefixes (RIPE API)
         run: python3 ip-country-ripe.py RU
 
-      - name: Fetch CN prefixes
+      - name: Fetch CN prefixes (RIPE API)
         run: python3 ip-country-ripe.py CN
 
-      - name: Combine and aggregate
+      - name: Fetch extra sources (whitelist + geoip.dat + geosite.dat)
+        run: python3 fetch-extra-sources.py > extra.lst
+
+      - name: Combine and aggregate all sources
         run: |
           python3 - <<'EOF'
           import ipaddress
@@ -39,6 +42,7 @@ jobs:
           lines = (
               open("ip_RU.lst").read().split()
               + open("ip_CN.lst").read().split()
+              + open("extra.lst").read().split()
           )
           result = sorted(
               aggregate_prefixes(lines),
@@ -49,7 +53,7 @@ jobs:
           print(f"Combined: {len(result)} prefixes")
           EOF
 
-      - name: Filter disallow list
+      - name: Append disallow.lst entries
         run: python3 filter-disallow.py combined.lst disallow.lst > ru_cn_final.lst
 
       - name: Show stats
@@ -66,5 +70,5 @@ jobs:
           git push -f origin latest
           gh release create latest ru_cn_final.lst \
             --title "RU+CN IP List ${DATE}" \
-            --notes "Auto-generated daily RU+CN IPv4 prefix list filtered by disallow.lst." \
+            --notes "Auto-generated daily. Sources: RIPE API, cidrwhitelist, geoip.dat, geosite.dat, disallow.lst." \
             --latest
