@@ -12,3 +12,5 @@ google.com
 google.ru
 2ip.ru
 2ip.io
+# Hetzner range hosting 2ip.ru/2ip.io — explicit fallback if DNS resolution fails on CI
+188.40.167.0/24
