@@ -1,30 +1,62 @@
 # radb-tools
 
-Tools for IP-ASN-Country mapping.
+Tools for generating IPv4 prefix lists and ASN lists by country, with daily auto-generated releases for RU+CN.
 
-- The ip-country script generates an ip-\<country code\>.lst file which contains all the IPv4 prefixes announced by the country's ASNs.
-- The asn-country script generates an asn-\<country code\>.lst file which contains all the autonomous system numbers by the country.
-  
+## Ready-to-use release
+
+A combined RU+CN IPv4 prefix list is published daily via GitHub Actions:
+
+```
+https://github.com/xyzmean/radb-tools/releases/download/latest/ru_cn_final.lst
+```
+
+Sources merged into the release:
+- RIPE API (RU + CN allocations)
+- [russia-mobile-internet-whitelist](https://github.com/hxehex/russia-mobile-internet-whitelist) CIDRs
+- Loyalsoldier [geoip.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geoip:RU` + `geoip:CN`
+- Loyalsoldier [geosite.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geosite:RU` + `geosite:CATEGORY-RU` (resolved via Yandex + Google DNS)
+- `disallow.lst` — extra domains/IPs/ASNs appended on top (see below)
+
+All sources are aggregated and deduplicated. Currently ~43 000 prefixes.
+
+## disallow.lst
+
+Add extra entries to include in the final list. Supported formats:
+
+```
+example.com       # domain — resolved via Yandex DNS + Google DNS
+1.2.3.4           # IPv4 address
+1.2.3.0/24        # CIDR subnet
+AS45102           # AS number — resolved to announced prefixes via RIPE API
+```
+
 ## Installation
 
 ```bash
-git clone --depth=1 git@github.com:furriest/radb-tools.git
-cd ./radb-tools
+git clone --depth=1 git@github.com:xyzmean/radb-tools.git
+cd radb-tools
 pip3 install -r requirements.txt
 ```
 
-## Usage
+## Manual usage
 
 ```bash
-./renew-db
-python3 ./ip-country.py RU
-python3 ./asn-country.py RU
-````
-or
+# Generate prefix list for a country via RIPE API
+python3 ip-country-ripe.py RU
 
-```bash
-python3 ./ip-country-ripe.py RU
-````
+# Generate prefix list via local PyASN DB (requires renew-db first)
+bash renew-db
+python3 ip-country.py RU
+
+# Extract ASN list for a country
+python3 asn-country.py RU
+
+# Fetch extra sources (cidrwhitelist + geoip.dat + geosite.dat)
+python3 fetch-extra-sources.py > extra.lst
+
+# Apply disallow.lst on top of a prefix list
+python3 filter-disallow.py combined.lst disallow.lst > final.lst
+```
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
