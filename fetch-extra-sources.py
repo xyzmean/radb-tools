@@ -6,14 +6,17 @@ Sources:
   1. russia-mobile-internet-whitelist CIDR list
   2. geoip:RU + geoip:CN from Loyalsoldier v2ray-rules-dat (geoip.dat, protobuf)
   3. geosite:RU + geosite:CN domain resolution from geosite.dat (Yandex+Google DNS)
+  4. local pyasn DB (asn.txt + ipasn.lst) for RU+CN — BGP-announced prefixes
 """
 import io
+import os
 import sys
 import time
 import socket
 import ipaddress
 import requests
 import dns.resolver
+import pyasn
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from aggregate_prefixes import aggregate_prefixes
 
@@ -42,6 +45,7 @@ GEOIP_URL   = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip
 GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat'
 GEOIP_CATEGORIES   = {'RU', 'CN'}
 GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU', 'CATEGORY-IP-GEO-DETECT'}
+LOCAL_DB_COUNTRIES = {'RU', 'CN'}
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
@@ -59,6 +63,30 @@ def resolve_host(host):
         except Exception:
             pass
     return list(ips)
+
+
+# ── local pyasn DB (BGP RIB) ─────────────────────────────────────────────────
+
+def parse_local_db(base_dir, country_codes):
+    """Return IPv4 prefixes from local pyasn DB for the given country codes.
+
+    Reads asn.txt to collect ASNs per country and resolves each via ipasn.lst.
+    Returns [] if either file is missing (e.g. renew-db was not run).
+    """
+    asn_path = os.path.join(base_dir, 'asn.txt')
+    ipasn_path = os.path.join(base_dir, 'ipasn.lst')
+    if not (os.path.exists(asn_path) and os.path.exists(ipasn_path)):
+        print('  asn.txt or ipasn.lst missing, skipping local DB', file=sys.stderr)
+        return []
+
+    asndb = pyasn.pyasn(ipasn_path)
+    with open(asn_path) as f:
+        asn_list = [t.split(' ')[0] for t in f if t.split(' ')[-1][:2] in country_codes]
+
+    prefixes = []
+    for asn in asn_list:
+        prefixes.extend(asndb.get_as_prefixes(asn) or [])
+    return prefixes
 
 
 # ── minimal protobuf wire-format parser ──────────────────────────────────────
@@ -171,6 +199,7 @@ def parse_geosite(data, target_codes):
 
 def main():
     all_prefixes = []
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 1. russia-mobile-internet-whitelist
     print('Fetching cidrwhitelist.txt...', file=sys.stderr)
@@ -210,6 +239,12 @@ def main():
                 for ip in ips:
                     all_prefixes.append(ip + '/32')
     print(f'  Resolved {resolved}/{len(domains)} domains', file=sys.stderr)
+
+    # 4. local pyasn DB (BGP RIB snapshot) for RU+CN
+    print('Reading local pyasn DB...', file=sys.stderr)
+    db_prefixes = parse_local_db(script_dir, LOCAL_DB_COUNTRIES)
+    print(f'  {len(db_prefixes)} IPv4 prefixes ({sorted(LOCAL_DB_COUNTRIES)})', file=sys.stderr)
+    all_prefixes.extend(str(p) for p in db_prefixes)
 
     result = sorted(
         aggregate_prefixes(all_prefixes),
