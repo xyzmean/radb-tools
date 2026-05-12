@@ -51,7 +51,7 @@ LOCAL_DB_COUNTRIES = {'RU', 'CN'}
 
 ITDOG_URL = (
     'https://github.com/itdoginfo/allow-domains'
-    '/raw/main/Russia/inside-raw.lst'
+    '/raw/main/Russia/outside-raw.lst'
 )
 V2FLY_RU_URL = (
     'https://github.com/v2fly/domain-list-community'
@@ -84,7 +84,12 @@ def resolve_host(host):
 # ── extra RU domain lists ────────────────────────────────────────────────────
 
 def fetch_itdog_domains():
-    """Fetch itdoginfo allow-domains Russia/inside-raw.lst (plain domain list)."""
+    """Fetch itdoginfo allow-domains Russia/outside-raw.lst (plain domain list).
+
+    outside-raw.lst = RF-geofenced domains accessible only from Russian subnets
+    (gosuslugi.ru, fssp.gov.ru, kinopoisk.ru, russianpost.ru, etc.). NOT to be
+    confused with inside-raw.lst, which is the inverse (blocked-in-RF).
+    """
     resp = fetch_with_retry(ITDOG_URL, timeout=60)
     domains = []
     for line in resp.text.splitlines():

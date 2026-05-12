@@ -18,7 +18,7 @@ Sources merged into `ru_cn_final.lst`:
 - [russia-mobile-internet-whitelist](https://github.com/hxehex/russia-mobile-internet-whitelist) CIDRs
 - Loyalsoldier [geoip.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geoip:RU` + `geoip:CN`
 - Loyalsoldier [geosite.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geosite:RU` + `geosite:CATEGORY-RU` (resolved via Yandex + Google + system DNS)
-- [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) `Russia/inside-raw.lst` — curated list of RF-accessible domains (resolved)
+- [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) `Russia/outside-raw.lst` — RF-geofenced domains (gosuslugi, gov.ru, kinopoisk, russianpost etc.); resolved
 - [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) `category-ru` (resolved; `include:` directives skipped to avoid cross-category pull-in)
 - `extra-include.lst` — extra domains/IPs/ASNs appended on top (see below)
 
