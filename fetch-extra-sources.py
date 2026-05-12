@@ -53,10 +53,11 @@ ITDOG_URL = (
     'https://github.com/itdoginfo/allow-domains'
     '/raw/main/Russia/outside-raw.lst'
 )
-V2FLY_RU_URL = (
+V2FLY_DATA_URL = (
     'https://github.com/v2fly/domain-list-community'
-    '/raw/master/data/category-ru'
+    '/raw/master/data/{name}'
 )
+V2FLY_MAX_DEPTH = 5
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
@@ -101,36 +102,52 @@ def fetch_itdog_domains():
 
 
 def fetch_v2fly_ru_domains():
-    """Fetch v2fly category-ru. Parses domain: / full: / bare-suffix entries.
+    """Fetch v2fly category-ru and recursively follow all include: directives.
 
-    Skips include: directives (they reference other categories like 'google'
-    or 'yandex' that may pull in non-RU-specific names) and regexp: (not
-    resolvable via DNS). Inline @attribute tags are stripped.
+    category-ru includes ~37 RU-specific sub-categories (tld-ru, beget, yandex,
+    kaspersky, mts-ru, rostelecom, etc.) and bare domain entries. Each include
+    is fetched as the data/<name> file and parsed the same way; nested includes
+    are followed up to V2FLY_MAX_DEPTH. Parses domain:/full:/bare-suffix; skips
+    regexp:. Inline @attribute tags are stripped.
     """
-    resp = fetch_with_retry(V2FLY_RU_URL, timeout=60)
     domains = []
-    for raw in resp.text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith('#'):
-            continue
-        line = line.split('#', 1)[0].split('@', 1)[0].strip()
-        if not line:
-            continue
-        if ':' in line:
-            kind, _, value = line.partition(':')
-            kind = kind.strip().lower()
-            value = value.strip()
-            if not value:
+    seen = set()
+
+    def parse(name, depth):
+        if name in seen or depth > V2FLY_MAX_DEPTH:
+            return
+        seen.add(name)
+        try:
+            resp = fetch_with_retry(V2FLY_DATA_URL.format(name=name), timeout=30, retries=2)
+        except Exception as e:
+            print(f'  v2fly: skip {name} ({e})', file=sys.stderr)
+            return
+        for raw in resp.text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#'):
                 continue
-            if kind == 'domain':
-                domains.append(value)
-                domains.append('www.' + value)
-            elif kind == 'full':
-                domains.append(value)
-            # include: and regexp: deliberately skipped
-        else:
-            domains.append(line)
-            domains.append('www.' + line)
+            line = line.split('#', 1)[0].split('@', 1)[0].strip()
+            if not line:
+                continue
+            if ':' in line:
+                kind, _, value = line.partition(':')
+                kind = kind.strip().lower()
+                value = value.strip()
+                if not value:
+                    continue
+                if kind == 'domain':
+                    domains.append(value)
+                    domains.append('www.' + value)
+                elif kind == 'full':
+                    domains.append(value)
+                elif kind == 'include':
+                    parse(value, depth + 1)
+                # regexp: skipped
+            else:
+                domains.append(line)
+                domains.append('www.' + line)
+
+    parse('category-ru', 0)
     return domains
 
 
