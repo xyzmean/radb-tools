@@ -62,6 +62,11 @@ def resolve_host(host):
             ips.update(str(a) for a in r.resolve(host, 'A'))
         except Exception:
             pass
+    if not ips:
+        try:
+            ips.update(socket.gethostbyname_ex(host)[2])
+        except Exception:
+            pass
     return list(ips)
 
 

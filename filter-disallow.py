@@ -12,6 +12,7 @@ Usage: filter-disallow.py <prefixes.lst> <extra-include.lst>
 Output: aggregated prefix list with include entries merged in, to stdout
 """
 import re
+import socket
 import sys
 import ipaddress
 import requests
@@ -33,6 +34,11 @@ def resolve_host(host):
     for r in _resolvers:
         try:
             ips.update(str(a) for a in r.resolve(host, 'A'))
+        except Exception:
+            pass
+    if not ips:
+        try:
+            ips.update(socket.gethostbyname_ex(host)[2])
         except Exception:
             pass
     return list(ips)
