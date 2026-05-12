@@ -1,5 +1,11 @@
 #!/bin/sh
+set -eu
 rm -f rib*.bz2
 wget -N https://ftp.ripe.net/ripe/asnames/asn.txt
 pyasn_util_download.py --latest
-pyasn_util_convert.py --single $(find . -maxdepth 1 -name "rib*.bz2" -print0) ipasn.lst
+rib_file=$(find . -maxdepth 1 -name "rib*.bz2" | head -n 1)
+if [ -z "$rib_file" ]; then
+    echo "Error: no rib*.bz2 found after pyasn_util_download.py" >&2
+    exit 1
+fi
+pyasn_util_convert.py --single "$rib_file" ipasn.lst

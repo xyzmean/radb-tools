@@ -54,4 +54,6 @@ This fetches `asn.txt` from RIPE FTP and uses `pyasn_util_download.py` + `pyasn_
 
 **`asn-country.py`** is a simpler filter: reads `asn.txt`, outputs ASNs whose line ends with the country code.
 
-**Generated/cached data files** (`*.lst`, `*.bz2`) are gitignored and must be created locally via `renew-db` before using `ip-country.py`.
+**Generated/cached data files** (`*.lst`, `*.bz2`) are gitignored and must be created locally via `renew-db` before using `ip-country.py`. The exception is `extra-include.lst`, which is checked in and lists extra domains/IPs/ASNs that `filter-disallow.py` appends on top of the aggregated prefix list.
+
+**`combine-lists.py`** merges multiple prefix lists, aggregates, and writes the sorted CIDR result to an output file. Used by the CI workflow to combine RU, CN, and extra source outputs.

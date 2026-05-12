@@ -1,4 +1,4 @@
-# Domains and IPs excluded from the final RU+CN prefix list.
+# Extra domains and IPs to INCLUDE in the final RU+CN prefix list.
 # Supported formats:
 #   domain name   — resolved via DNS at generation time
 #   IPv4 address  — e.g. 8.8.8.8

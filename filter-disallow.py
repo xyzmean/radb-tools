@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Append extra IPs/subnets from disallow.lst to an existing prefix list.
+Append extra IPs/subnets from an include list to an existing prefix list.
 
-Supported entry types in disallow.lst:
+Supported entry types in the include list:
   - Domain name:   example.com   (resolved via Yandex DNS at runtime)
   - IP address:    1.2.3.4
   - CIDR subnet:   1.2.3.0/24
   - AS number:     AS12345       (resolved to announced prefixes via RIPE API)
 
-Usage: filter-disallow.py <prefixes.lst> <disallow.lst>
-Output: aggregated prefix list with disallow.lst entries merged in, to stdout
+Usage: filter-disallow.py <prefixes.lst> <extra-include.lst>
+Output: aggregated prefix list with include entries merged in, to stdout
 """
 import re
 import sys
@@ -24,6 +24,7 @@ _resolvers = []
 for ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
     r = dns.resolver.Resolver()
     r.nameservers = ns
+    r.lifetime = 3.0
     _resolvers.append(r)
 
 
@@ -41,7 +42,9 @@ def resolve_asn(asn_str):
     num = asn_str.upper().lstrip('AS')
     url = f'https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS{num}'
     try:
-        data = requests.get(url, timeout=20).json()
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
         nets = []
         for entry in data.get('data', {}).get('prefixes', []):
             prefix = entry.get('prefix', '')
@@ -59,7 +62,7 @@ def resolve_asn(asn_str):
 
 def main():
     if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <prefixes.lst> <disallow.lst>", file=sys.stderr)
+        print(f"Usage: {sys.argv[0]} <prefixes.lst> <extra-include.lst>", file=sys.stderr)
         sys.exit(1)
 
     prefixes_file, disallow_file = sys.argv[1], sys.argv[2]

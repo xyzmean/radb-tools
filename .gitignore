@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 *.lst
-!disallow.lst
+!extra-include.lst
 *.bz2
 *.dat
 .DS_Store

@@ -6,15 +6,36 @@ Sources:
   1. russia-mobile-internet-whitelist CIDR list
   2. geoip:RU + geoip:CN from Loyalsoldier v2ray-rules-dat (geoip.dat, protobuf)
   3. geosite:RU + geosite:CN domain resolution from geosite.dat (Yandex+Google DNS)
+  4. local pyasn DB (asn.txt + ipasn.lst) for RU+CN — BGP-announced prefixes
 """
 import io
+import os
 import sys
+import time
 import socket
 import ipaddress
 import requests
 import dns.resolver
+import pyasn
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from aggregate_prefixes import aggregate_prefixes
+
+
+def fetch_with_retry(url, timeout=60, retries=4):
+    """GET with exponential backoff: 2s, 4s, 8s between attempts."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt < retries - 1:
+                wait = 2 ** (attempt + 1)
+                print(f'  fetch {url} failed ({e}); retrying in {wait}s', file=sys.stderr)
+                time.sleep(wait)
+    raise last_exc
 
 CIDRWHITELIST_URL = (
     'https://github.com/hxehex/russia-mobile-internet-whitelist'
@@ -24,6 +45,7 @@ GEOIP_URL   = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip
 GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat'
 GEOIP_CATEGORIES   = {'RU', 'CN'}
 GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU', 'CATEGORY-IP-GEO-DETECT'}
+LOCAL_DB_COUNTRIES = {'RU', 'CN'}
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
@@ -41,6 +63,30 @@ def resolve_host(host):
         except Exception:
             pass
     return list(ips)
+
+
+# ── local pyasn DB (BGP RIB) ─────────────────────────────────────────────────
+
+def parse_local_db(base_dir, country_codes):
+    """Return IPv4 prefixes from local pyasn DB for the given country codes.
+
+    Reads asn.txt to collect ASNs per country and resolves each via ipasn.lst.
+    Returns [] if either file is missing (e.g. renew-db was not run).
+    """
+    asn_path = os.path.join(base_dir, 'asn.txt')
+    ipasn_path = os.path.join(base_dir, 'ipasn.lst')
+    if not (os.path.exists(asn_path) and os.path.exists(ipasn_path)):
+        print('  asn.txt or ipasn.lst missing, skipping local DB', file=sys.stderr)
+        return []
+
+    asndb = pyasn.pyasn(ipasn_path)
+    with open(asn_path) as f:
+        asn_list = [t.split(' ')[0] for t in f if t.split(' ')[-1][:2] in country_codes]
+
+    prefixes = []
+    for asn in asn_list:
+        prefixes.extend(asndb.get_as_prefixes(asn) or [])
+    return prefixes
 
 
 # ── minimal protobuf wire-format parser ──────────────────────────────────────
@@ -153,10 +199,11 @@ def parse_geosite(data, target_codes):
 
 def main():
     all_prefixes = []
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 1. russia-mobile-internet-whitelist
     print('Fetching cidrwhitelist.txt...', file=sys.stderr)
-    resp = requests.get(CIDRWHITELIST_URL, timeout=30)
+    resp = fetch_with_retry(CIDRWHITELIST_URL, timeout=30)
     count = 0
     for line in resp.text.splitlines():
         line = line.strip()
@@ -171,14 +218,14 @@ def main():
 
     # 2. geoip.dat → RU + CN IPv4 CIDRs
     print('Fetching geoip.dat...', file=sys.stderr)
-    geoip_data = requests.get(GEOIP_URL, timeout=60).content
+    geoip_data = fetch_with_retry(GEOIP_URL, timeout=60).content
     geoip_nets = parse_geoip(geoip_data, GEOIP_CATEGORIES)
     print(f'  {len(geoip_nets)} IPv4 CIDRs ({sorted(GEOIP_CATEGORIES)})', file=sys.stderr)
     all_prefixes.extend(geoip_nets)
 
     # 3. geosite.dat → RU + CATEGORY-RU domains → resolve to IPs
     print('Fetching geosite.dat...', file=sys.stderr)
-    geosite_data = requests.get(GEOSITE_URL, timeout=60).content
+    geosite_data = fetch_with_retry(GEOSITE_URL, timeout=60).content
     domains = list(set(parse_geosite(geosite_data, GEOSITE_CATEGORIES)))
     print(f'  {len(domains)} unique domains to resolve...', file=sys.stderr)
 
@@ -192,6 +239,12 @@ def main():
                 for ip in ips:
                     all_prefixes.append(ip + '/32')
     print(f'  Resolved {resolved}/{len(domains)} domains', file=sys.stderr)
+
+    # 4. local pyasn DB (BGP RIB snapshot) for RU+CN
+    print('Reading local pyasn DB...', file=sys.stderr)
+    db_prefixes = parse_local_db(script_dir, LOCAL_DB_COUNTRIES)
+    print(f'  {len(db_prefixes)} IPv4 prefixes ({sorted(LOCAL_DB_COUNTRIES)})', file=sys.stderr)
+    all_prefixes.extend(str(p) for p in db_prefixes)
 
     result = sorted(
         aggregate_prefixes(all_prefixes),
