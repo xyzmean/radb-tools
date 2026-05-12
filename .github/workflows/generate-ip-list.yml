@@ -56,9 +56,13 @@ jobs:
       - name: Append disallow.lst entries
         run: python3 filter-disallow.py combined.lst disallow.lst > ru_cn_final.lst
 
+      - name: Build rucn.dat (v2ray geoip format)
+        run: python3 build-geoip.py ru_cn_final.lst rucn.dat rucn
+
       - name: Show stats
         run: |
           echo "Final prefix count: $(wc -l < ru_cn_final.lst)"
+          echo "rucn.dat size: $(wc -c < rucn.dat) bytes"
 
       - name: Update latest release
         env:
@@ -68,7 +72,7 @@ jobs:
           gh release delete latest --yes 2>/dev/null || true
           git tag -f latest
           git push -f origin latest
-          gh release create latest ru_cn_final.lst \
+          gh release create latest ru_cn_final.lst rucn.dat \
             --title "RU+CN IP List ${DATE}" \
             --notes "Auto-generated daily. Sources: RIPE API, cidrwhitelist, geoip.dat, geosite.dat, disallow.lst." \
             --latest
