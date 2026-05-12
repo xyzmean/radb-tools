@@ -24,13 +24,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Build local pyasn DB
+        run: bash renew-db
+
       - name: Fetch RU prefixes (RIPE API)
         run: python3 ip-country-ripe.py RU
 
       - name: Fetch CN prefixes (RIPE API)
         run: python3 ip-country-ripe.py CN
 
-      - name: Fetch extra sources (whitelist + geoip.dat + geosite.dat)
+      - name: Fetch extra sources (remote + local DB + country scripts)
         run: python3 fetch-extra-sources.py > extra.lst
 
       - name: Combine and aggregate all sources
@@ -74,5 +77,5 @@ jobs:
           git push -f origin latest
           gh release create latest ru_cn_final.lst rucn.dat \
             --title "RU+CN IP List ${DATE}" \
-            --notes "Auto-generated daily. Sources: RIPE API, cidrwhitelist, geoip.dat, geosite.dat, disallow.lst." \
+            --notes "Auto-generated daily. Sources: RIPE API, local pyasn DB, ip-country.py, asn-country.py, cidrwhitelist, geoip.dat, geosite.dat, disallow.lst." \
             --latest

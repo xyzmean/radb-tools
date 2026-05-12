@@ -11,8 +11,11 @@ import io
 import sys
 import socket
 import ipaddress
+import os
+import subprocess
 import requests
 import dns.resolver
+import pyasn
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from aggregate_prefixes import aggregate_prefixes
 
@@ -24,6 +27,7 @@ GEOIP_URL   = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip
 GEOSITE_URL = 'https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat'
 GEOIP_CATEGORIES   = {'RU', 'CN'}
 GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU', 'CATEGORY-IP-GEO-DETECT'}
+DB_COUNTRIES = {'RU', 'CN'}
 
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
@@ -41,6 +45,95 @@ def resolve_host(host):
         except Exception:
             pass
     return list(ips)
+
+
+def parse_db_prefixes(base_dir, country_codes):
+    """Extract IPv4 prefixes from local pyasn DB for selected country codes."""
+    asn_path = os.path.join(base_dir, 'asn.txt')
+    ipasn_path = os.path.join(base_dir, 'ipasn.lst')
+    if not (os.path.exists(asn_path) and os.path.exists(ipasn_path)):
+        print('Skipping local DB source: asn.txt or ipasn.lst not found', file=sys.stderr)
+        return []
+
+    asndb = pyasn.pyasn(ipasn_path)
+    prefixes = []
+    with open(asn_path) as asn_file:
+        asn_list = [t.split(' ')[0] for t in asn_file if t.split(' ')[-1][:2] in country_codes]
+
+    for asn in asn_list:
+        try:
+            asn_prefixes = asndb.get_as_prefixes(asn)
+            if asn_prefixes:
+                prefixes.extend(asn_prefixes)
+        except Exception:
+            pass
+    return prefixes
+
+
+def parse_ip_country_script(base_dir, country_codes):
+    """Run ip-country.py for selected countries and collect produced prefixes."""
+    script_path = os.path.join(base_dir, 'ip-country.py')
+    if not os.path.exists(script_path):
+        print('Skipping ip-country.py source: script not found', file=sys.stderr)
+        return []
+
+    prefixes = []
+    for country in sorted(country_codes):
+        try:
+            subprocess.run(
+                [sys.executable, script_path, country],
+                cwd=base_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            output_path = os.path.join(base_dir, f'ip_{country}.lst')
+            if os.path.exists(output_path):
+                with open(output_path) as country_file:
+                    for line in country_file:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            prefixes.append(line)
+        except Exception:
+            pass
+    return prefixes
+
+
+def parse_asn_country_script(base_dir, country_codes):
+    """Run asn-country.py and resolve resulting ASN lists via local pyasn DB."""
+    script_path = os.path.join(base_dir, 'asn-country.py')
+    ipasn_path = os.path.join(base_dir, 'ipasn.lst')
+    if not os.path.exists(script_path):
+        print('Skipping asn-country.py source: script not found', file=sys.stderr)
+        return []
+    if not os.path.exists(ipasn_path):
+        print('Skipping asn-country.py source: ipasn.lst not found', file=sys.stderr)
+        return []
+
+    asndb = pyasn.pyasn(ipasn_path)
+    prefixes = []
+    for country in sorted(country_codes):
+        try:
+            subprocess.run(
+                [sys.executable, script_path, country],
+                cwd=base_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            output_path = os.path.join(base_dir, f'asn_{country}.lst')
+            if os.path.exists(output_path):
+                with open(output_path) as country_file:
+                    for line in country_file:
+                        asn = line.strip()
+                        if not asn or asn.startswith('#'):
+                            continue
+                        asn_prefixes = asndb.get_as_prefixes(asn)
+                        if asn_prefixes:
+                            prefixes.extend(asn_prefixes)
+        except Exception:
+            pass
+    return prefixes
 
 
 # ── minimal protobuf wire-format parser ──────────────────────────────────────
@@ -153,6 +246,7 @@ def parse_geosite(data, target_codes):
 
 def main():
     all_prefixes = []
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 1. russia-mobile-internet-whitelist
     print('Fetching cidrwhitelist.txt...', file=sys.stderr)
@@ -192,6 +286,24 @@ def main():
                 for ip in ips:
                     all_prefixes.append(ip + '/32')
     print(f'  Resolved {resolved}/{len(domains)} domains', file=sys.stderr)
+
+    # 4. local pyasn DB (ipasn.lst + asn.txt) for RU+CN
+    print('Parsing local DB (ipasn.lst + asn.txt)...', file=sys.stderr)
+    db_prefixes = parse_db_prefixes(script_dir, DB_COUNTRIES)
+    print(f'  {len(db_prefixes)} IPv4 prefixes from local DB ({sorted(DB_COUNTRIES)})', file=sys.stderr)
+    all_prefixes.extend(db_prefixes)
+
+    # 5. run ip-country.py for RU+CN and merge produced lists
+    print('Running ip-country.py for RU/CN...', file=sys.stderr)
+    script_prefixes = parse_ip_country_script(script_dir, DB_COUNTRIES)
+    print(f'  {len(script_prefixes)} IPv4 prefixes from ip-country.py', file=sys.stderr)
+    all_prefixes.extend(script_prefixes)
+
+    # 6. run asn-country.py for RU+CN and resolve ASN prefixes from local DB
+    print('Running asn-country.py for RU/CN...', file=sys.stderr)
+    asn_script_prefixes = parse_asn_country_script(script_dir, DB_COUNTRIES)
+    print(f'  {len(asn_script_prefixes)} IPv4 prefixes via asn-country.py', file=sys.stderr)
+    all_prefixes.extend(asn_script_prefixes)
 
     result = sorted(
         aggregate_prefixes(all_prefixes),
