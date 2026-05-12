@@ -17,7 +17,9 @@ Sources merged into `ru_cn_final.lst`:
 - Local pyasn DB built from the latest RIPE BGP RIB snapshot (BGP-announced RU + CN prefixes)
 - [russia-mobile-internet-whitelist](https://github.com/hxehex/russia-mobile-internet-whitelist) CIDRs
 - Loyalsoldier [geoip.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geoip:RU` + `geoip:CN`
-- Loyalsoldier [geosite.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geosite:RU` + `geosite:CATEGORY-RU` (resolved via Yandex + Google DNS)
+- Loyalsoldier [geosite.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geosite:RU` + `geosite:CATEGORY-RU` (resolved via Yandex + Google + system DNS)
+- [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) `Russia/inside-raw.lst` — curated list of RF-accessible domains (resolved)
+- [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) `category-ru` (resolved; `include:` directives skipped to avoid cross-category pull-in)
 - `extra-include.lst` — extra domains/IPs/ASNs appended on top (see below)
 
 All sources are aggregated and deduplicated. Currently ~43 000 prefixes.

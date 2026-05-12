@@ -5,7 +5,9 @@ Fetch extra IPv4 prefix sources and output aggregated CIDRs to stdout.
 Sources:
   1. russia-mobile-internet-whitelist CIDR list
   2. geoip:RU + geoip:CN from Loyalsoldier v2ray-rules-dat (geoip.dat, protobuf)
-  3. geosite:RU + geosite:CN domain resolution from geosite.dat (Yandex+Google DNS)
+  3. geosite:RU + geosite:CATEGORY-RU + CATEGORY-IP-GEO-DETECT, plus itdoginfo
+     allow-domains (Russia/inside-raw) and v2fly category-ru → DNS-resolved
+     via Yandex + Google + system resolver
   4. local pyasn DB (asn.txt + ipasn.lst) for RU+CN — BGP-announced prefixes
 """
 import io
@@ -47,6 +49,15 @@ GEOIP_CATEGORIES   = {'RU', 'CN'}
 GEOSITE_CATEGORIES = {'RU', 'CATEGORY-RU', 'CATEGORY-IP-GEO-DETECT'}
 LOCAL_DB_COUNTRIES = {'RU', 'CN'}
 
+ITDOG_URL = (
+    'https://github.com/itdoginfo/allow-domains'
+    '/raw/main/Russia/inside-raw.lst'
+)
+V2FLY_RU_URL = (
+    'https://github.com/v2fly/domain-list-community'
+    '/raw/master/data/category-ru'
+)
+
 _resolvers = []
 for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
     _r = dns.resolver.Resolver()
@@ -62,7 +73,60 @@ def resolve_host(host):
             ips.update(str(a) for a in r.resolve(host, 'A'))
         except Exception:
             pass
+    if not ips:
+        try:
+            ips.update(socket.gethostbyname_ex(host)[2])
+        except Exception:
+            pass
     return list(ips)
+
+
+# ── extra RU domain lists ────────────────────────────────────────────────────
+
+def fetch_itdog_domains():
+    """Fetch itdoginfo allow-domains Russia/inside-raw.lst (plain domain list)."""
+    resp = fetch_with_retry(ITDOG_URL, timeout=60)
+    domains = []
+    for line in resp.text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        domains.append(line)
+    return domains
+
+
+def fetch_v2fly_ru_domains():
+    """Fetch v2fly category-ru. Parses domain: / full: / bare-suffix entries.
+
+    Skips include: directives (they reference other categories like 'google'
+    or 'yandex' that may pull in non-RU-specific names) and regexp: (not
+    resolvable via DNS). Inline @attribute tags are stripped.
+    """
+    resp = fetch_with_retry(V2FLY_RU_URL, timeout=60)
+    domains = []
+    for raw in resp.text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        line = line.split('#', 1)[0].split('@', 1)[0].strip()
+        if not line:
+            continue
+        if ':' in line:
+            kind, _, value = line.partition(':')
+            kind = kind.strip().lower()
+            value = value.strip()
+            if not value:
+                continue
+            if kind == 'domain':
+                domains.append(value)
+                domains.append('www.' + value)
+            elif kind == 'full':
+                domains.append(value)
+            # include: and regexp: deliberately skipped
+        else:
+            domains.append(line)
+            domains.append('www.' + line)
+    return domains
 
 
 # ── local pyasn DB (BGP RIB) ─────────────────────────────────────────────────
@@ -223,10 +287,21 @@ def main():
     print(f'  {len(geoip_nets)} IPv4 CIDRs ({sorted(GEOIP_CATEGORIES)})', file=sys.stderr)
     all_prefixes.extend(geoip_nets)
 
-    # 3. geosite.dat → RU + CATEGORY-RU domains → resolve to IPs
+    # 3. RU-domain pool (geosite.dat + itdoginfo + v2fly) → DNS-resolve to IPs
     print('Fetching geosite.dat...', file=sys.stderr)
     geosite_data = fetch_with_retry(GEOSITE_URL, timeout=60).content
-    domains = list(set(parse_geosite(geosite_data, GEOSITE_CATEGORIES)))
+    geosite_domains = parse_geosite(geosite_data, GEOSITE_CATEGORIES)
+    print(f'  {len(geosite_domains)} domains from geosite.dat', file=sys.stderr)
+
+    print('Fetching itdoginfo allow-domains...', file=sys.stderr)
+    itdog_domains = fetch_itdog_domains()
+    print(f'  {len(itdog_domains)} domains from itdoginfo', file=sys.stderr)
+
+    print('Fetching v2fly category-ru...', file=sys.stderr)
+    v2fly_domains = fetch_v2fly_ru_domains()
+    print(f'  {len(v2fly_domains)} domains from v2fly', file=sys.stderr)
+
+    domains = list({*geosite_domains, *itdog_domains, *v2fly_domains})
     print(f'  {len(domains)} unique domains to resolve...', file=sys.stderr)
 
     resolved = 0

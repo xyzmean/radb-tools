@@ -33,7 +33,7 @@ jobs:
       - name: Fetch CN prefixes (RIPE API)
         run: python3 ip-country-ripe.py CN
 
-      - name: Fetch extra sources (whitelist + geoip.dat + geosite.dat + local DB)
+      - name: Fetch extra sources (whitelist + geoip + geosite + itdog + v2fly + local DB)
         run: python3 fetch-extra-sources.py > extra.lst
 
       - name: Combine and aggregate all sources
