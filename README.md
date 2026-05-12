@@ -7,10 +7,12 @@ Tools for generating IPv4 prefix lists and ASN lists by country, with daily auto
 A combined RU+CN IPv4 prefix list is published daily via GitHub Actions:
 
 ```
-https://github.com/xyzmean/radb-tools/releases/download/latest/ru_cn_final.lst
+https://github.com/xyzmean/radb-tools/releases/download/latest/ru_cn_final.lst   # IPv4 CIDRs
+https://github.com/xyzmean/radb-tools/releases/download/latest/rucn.dat          # v2ray/xray geoip
+https://github.com/xyzmean/radb-tools/releases/download/latest/ru_cn_asn.lst     # RU+CN AS numbers
 ```
 
-Sources merged into the release:
+Sources merged into `ru_cn_final.lst`:
 - RIPE API (RU + CN allocations)
 - Local pyasn DB built from the latest RIPE BGP RIB snapshot (BGP-announced RU + CN prefixes)
 - [russia-mobile-internet-whitelist](https://github.com/hxehex/russia-mobile-internet-whitelist) CIDRs
