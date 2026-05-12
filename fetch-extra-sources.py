@@ -9,12 +9,30 @@ Sources:
 """
 import io
 import sys
+import time
 import socket
 import ipaddress
 import requests
 import dns.resolver
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from aggregate_prefixes import aggregate_prefixes
+
+
+def fetch_with_retry(url, timeout=60, retries=4):
+    """GET with exponential backoff: 2s, 4s, 8s between attempts."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt < retries - 1:
+                wait = 2 ** (attempt + 1)
+                print(f'  fetch {url} failed ({e}); retrying in {wait}s', file=sys.stderr)
+                time.sleep(wait)
+    raise last_exc
 
 CIDRWHITELIST_URL = (
     'https://github.com/hxehex/russia-mobile-internet-whitelist'
@@ -156,7 +174,7 @@ def main():
 
     # 1. russia-mobile-internet-whitelist
     print('Fetching cidrwhitelist.txt...', file=sys.stderr)
-    resp = requests.get(CIDRWHITELIST_URL, timeout=30)
+    resp = fetch_with_retry(CIDRWHITELIST_URL, timeout=30)
     count = 0
     for line in resp.text.splitlines():
         line = line.strip()
@@ -171,14 +189,14 @@ def main():
 
     # 2. geoip.dat → RU + CN IPv4 CIDRs
     print('Fetching geoip.dat...', file=sys.stderr)
-    geoip_data = requests.get(GEOIP_URL, timeout=60).content
+    geoip_data = fetch_with_retry(GEOIP_URL, timeout=60).content
     geoip_nets = parse_geoip(geoip_data, GEOIP_CATEGORIES)
     print(f'  {len(geoip_nets)} IPv4 CIDRs ({sorted(GEOIP_CATEGORIES)})', file=sys.stderr)
     all_prefixes.extend(geoip_nets)
 
     # 3. geosite.dat → RU + CATEGORY-RU domains → resolve to IPs
     print('Fetching geosite.dat...', file=sys.stderr)
-    geosite_data = requests.get(GEOSITE_URL, timeout=60).content
+    geosite_data = fetch_with_retry(GEOSITE_URL, timeout=60).content
     domains = list(set(parse_geosite(geosite_data, GEOSITE_CATEGORIES)))
     print(f'  {len(domains)} unique domains to resolve...', file=sys.stderr)
 

@@ -34,27 +34,10 @@ jobs:
         run: python3 fetch-extra-sources.py > extra.lst
 
       - name: Combine and aggregate all sources
-        run: |
-          python3 - <<'EOF'
-          import ipaddress
-          from aggregate_prefixes import aggregate_prefixes
+        run: python3 combine-lists.py combined.lst ip_RU.lst ip_CN.lst extra.lst
 
-          lines = (
-              open("ip_RU.lst").read().split()
-              + open("ip_CN.lst").read().split()
-              + open("extra.lst").read().split()
-          )
-          result = sorted(
-              aggregate_prefixes(lines),
-              key=lambda x: ipaddress.ip_network(x),
-          )
-          with open("combined.lst", "w") as f:
-              f.write("\n".join(str(n) for n in result) + "\n")
-          print(f"Combined: {len(result)} prefixes")
-          EOF
-
-      - name: Append disallow.lst entries
-        run: python3 filter-disallow.py combined.lst disallow.lst > ru_cn_final.lst
+      - name: Append extra-include.lst entries
+        run: python3 filter-disallow.py combined.lst extra-include.lst > ru_cn_final.lst
 
       - name: Build rucn.dat (v2ray geoip format)
         run: python3 build-geoip.py ru_cn_final.lst rucn.dat rucn
@@ -74,5 +57,5 @@ jobs:
           git push -f origin latest
           gh release create latest ru_cn_final.lst rucn.dat \
             --title "RU+CN IP List ${DATE}" \
-            --notes "Auto-generated daily. Sources: RIPE API, cidrwhitelist, geoip.dat, geosite.dat, disallow.lst." \
+            --notes "Auto-generated daily. Sources: RIPE API, cidrwhitelist, geoip.dat, geosite.dat, extra-include.lst." \
             --latest

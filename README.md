@@ -15,11 +15,11 @@ Sources merged into the release:
 - [russia-mobile-internet-whitelist](https://github.com/hxehex/russia-mobile-internet-whitelist) CIDRs
 - Loyalsoldier [geoip.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geoip:RU` + `geoip:CN`
 - Loyalsoldier [geosite.dat](https://github.com/Loyalsoldier/v2ray-rules-dat) — `geosite:RU` + `geosite:CATEGORY-RU` (resolved via Yandex + Google DNS)
-- `disallow.lst` — extra domains/IPs/ASNs appended on top (see below)
+- `extra-include.lst` — extra domains/IPs/ASNs appended on top (see below)
 
 All sources are aggregated and deduplicated. Currently ~43 000 prefixes.
 
-## disallow.lst
+## extra-include.lst
 
 Add extra entries to include in the final list. Supported formats:
 
@@ -54,8 +54,8 @@ python3 asn-country.py RU
 # Fetch extra sources (cidrwhitelist + geoip.dat + geosite.dat)
 python3 fetch-extra-sources.py > extra.lst
 
-# Apply disallow.lst on top of a prefix list
-python3 filter-disallow.py combined.lst disallow.lst > final.lst
+# Apply extra-include.lst on top of a prefix list
+python3 filter-disallow.py combined.lst extra-include.lst > final.lst
 ```
 
 ## License
