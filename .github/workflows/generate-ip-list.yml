@@ -42,8 +42,25 @@ jobs:
       - name: Append extra-include.lst entries
         run: python3 filter-disallow.py combined.lst extra-include.lst > ru_cn_final.lst
 
-      - name: Build rucn.dat (v2ray geoip format)
-        run: python3 build-geoip.py ru_cn_final.lst rucn.dat rucn
+      - name: Build rucn.dat (v2ray geoip, IPv4 only)
+        run: python3 build-geoip.py ru_cn_final.lst rucn.dat rucn --v4
+
+      - name: Fetch RU IPv6 prefixes (RIPE API)
+        run: python3 ip6-country-ripe.py RU
+
+      - name: Fetch CN IPv6 prefixes (RIPE API)
+        run: python3 ip6-country-ripe.py CN
+
+      - name: Fetch extra IPv6 sources (geoip.dat v6 + AAAA resolution)
+        run: python3 fetch-extra-sources.py --v6 > extra_v6.lst
+
+      - name: Combine and aggregate IPv6 sources
+        run: python3 combine-lists.py ru_cn_v6.lst ip6_RU.lst ip6_CN.lst extra_v6.lst
+
+      - name: Build combined IPv4+IPv6 list and dat
+        run: |
+          cat ru_cn_final.lst ru_cn_v6.lst > ru_cn_all.lst
+          python3 build-geoip.py ru_cn_all.lst rucn_all.dat rucn
 
       - name: Generate RU+CN ASN list
         run: |
@@ -53,9 +70,12 @@ jobs:
 
       - name: Show stats
         run: |
-          echo "Final prefix count: $(wc -l < ru_cn_final.lst)"
-          echo "rucn.dat size: $(wc -c < rucn.dat) bytes"
-          echo "ASN count: $(wc -l < ru_cn_asn.lst)"
+          echo "IPv4 prefix count:    $(wc -l < ru_cn_final.lst)"
+          echo "IPv6 prefix count:    $(wc -l < ru_cn_v6.lst)"
+          echo "Combined prefix count: $(wc -l < ru_cn_all.lst)"
+          echo "rucn.dat size:        $(wc -c < rucn.dat) bytes"
+          echo "rucn_all.dat size:    $(wc -c < rucn_all.dat) bytes"
+          echo "ASN count:            $(wc -l < ru_cn_asn.lst)"
 
       - name: Update latest release
         env:
@@ -65,7 +85,10 @@ jobs:
           gh release delete latest --yes 2>/dev/null || true
           git tag -f latest
           git push -f origin latest
-          gh release create latest ru_cn_final.lst rucn.dat ru_cn_asn.lst \
+          gh release create latest \
+            ru_cn_final.lst ru_cn_v6.lst ru_cn_all.lst \
+            rucn.dat rucn_all.dat \
+            ru_cn_asn.lst \
             --title "RU+CN IP List ${DATE}" \
-            --notes "Auto-generated daily. Sources: RIPE API, local pyasn DB (BGP RIB), cidrwhitelist, geoip.dat, geosite.dat, extra-include.lst. Artefacts: ru_cn_final.lst (IPv4 CIDRs), rucn.dat (v2ray geoip), ru_cn_asn.lst (RIPE-registered RU+CN AS numbers)." \
+            --notes "Auto-generated daily. Sources: RIPE API, local pyasn DB (BGP RIB), cidrwhitelist, geoip.dat, geosite.dat, extra-include.lst. Artefacts: ru_cn_final.lst (IPv4), ru_cn_v6.lst (IPv6), ru_cn_all.lst (IPv4+IPv6), rucn.dat (v2ray geoip IPv4), rucn_all.dat (v2ray geoip IPv4+IPv6), ru_cn_asn.lst (ASNs)." \
             --latest

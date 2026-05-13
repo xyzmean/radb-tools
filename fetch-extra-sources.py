@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """
-Fetch extra IPv4 prefix sources and output aggregated CIDRs to stdout.
+Fetch extra prefix sources and output aggregated CIDRs to stdout.
 
-Sources:
+Usage: fetch-extra-sources.py [--v6]
+  --v6   Output IPv6 prefixes (geoip:RU/CN IPv6 + AAAA DNS resolution).
+         Default (no flag): IPv4 only.
+
+IPv4 sources:
   1. russia-mobile-internet-whitelist CIDR list
   2. geoip:RU + geoip:CN from Loyalsoldier v2ray-rules-dat (geoip.dat, protobuf)
   3. geosite:RU + geosite:CATEGORY-RU + CATEGORY-IP-GEO-DETECT, plus itdoginfo
      allow-domains (Russia/inside-raw) and v2fly category-ru → DNS-resolved
      via Yandex + Google + system resolver
   4. local pyasn DB (asn.txt + ipasn.lst) for RU+CN — BGP-announced prefixes
+
+IPv6 sources:
+  2. geoip:RU + geoip:CN IPv6 ranges from geoip.dat
+  3. Same domain lists as IPv4 but resolved via AAAA records
 """
 import io
 import os
@@ -67,14 +75,14 @@ for _ns in (['77.88.8.8', '77.88.8.1'], ['8.8.8.8', '8.8.4.4']):
     _resolvers.append(_r)
 
 
-def resolve_host(host):
+def resolve_host(host, rdtype='A'):
     ips = set()
     for r in _resolvers:
         try:
-            ips.update(str(a) for a in r.resolve(host, 'A'))
+            ips.update(str(a) for a in r.resolve(host, rdtype))
         except Exception:
             pass
-    if not ips:
+    if not ips and rdtype == 'A':
         try:
             ips.update(socket.gethostbyname_ex(host)[2])
         except Exception:
@@ -217,7 +225,10 @@ def _iter_fields(data):
 # GeoIP     { string country_code = 1; repeated CIDR cidr = 2; }
 # CIDR      { bytes ip = 1; uint32 prefix = 2; }
 
-def parse_geoip(data, target_codes):
+def parse_geoip(data, target_codes, ip_version=4):
+    """Parse geoip.dat; ip_version=4 or 6 selects which records to return."""
+    ip_len = 4 if ip_version == 4 else 16
+    af = socket.AF_INET if ip_version == 4 else socket.AF_INET6
     nets = []
     for f, wt, val in _iter_fields(data):
         if f != 1 or wt != 2:
@@ -234,8 +245,8 @@ def parse_geoip(data, target_codes):
                         ip_b = val3
                     elif f3 == 2 and wt3 == 0:
                         prefix = val3
-                if ip_b and len(ip_b) == 4:
-                    entry_cidrs.append(f'{socket.inet_ntoa(ip_b)}/{prefix}')
+                if ip_b and len(ip_b) == ip_len:
+                    entry_cidrs.append(f'{socket.inet_ntop(af, ip_b)}/{prefix}')
         if code in target_codes:
             nets.extend(entry_cidrs)
     return nets
@@ -284,29 +295,34 @@ def parse_geosite(data, target_codes):
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
+    v6_mode = '--v6' in sys.argv
+    ip_version = 6 if v6_mode else 4
+    rdtype = 'AAAA' if v6_mode else 'A'
+    prefix_bits = 128 if v6_mode else 32
     all_prefixes = []
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # 1. russia-mobile-internet-whitelist
-    print('Fetching cidrwhitelist.txt...', file=sys.stderr)
-    resp = fetch_with_retry(CIDRWHITELIST_URL, timeout=30)
-    count = 0
-    for line in resp.text.splitlines():
-        line = line.strip()
-        if line and not line.startswith('#'):
-            try:
-                ipaddress.ip_network(line, strict=False)
-                all_prefixes.append(line)
-                count += 1
-            except ValueError:
-                pass
-    print(f'  {count} CIDRs', file=sys.stderr)
+    if not v6_mode:
+        # 1. russia-mobile-internet-whitelist (IPv4 only)
+        print('Fetching cidrwhitelist.txt...', file=sys.stderr)
+        resp = fetch_with_retry(CIDRWHITELIST_URL, timeout=30)
+        count = 0
+        for line in resp.text.splitlines():
+            line = line.strip()
+            if line and not line.startswith('#'):
+                try:
+                    ipaddress.ip_network(line, strict=False)
+                    all_prefixes.append(line)
+                    count += 1
+                except ValueError:
+                    pass
+        print(f'  {count} CIDRs', file=sys.stderr)
 
-    # 2. geoip.dat → RU + CN IPv4 CIDRs
+    # 2. geoip.dat → RU + CN CIDRs (v4 or v6)
     print('Fetching geoip.dat...', file=sys.stderr)
     geoip_data = fetch_with_retry(GEOIP_URL, timeout=60).content
-    geoip_nets = parse_geoip(geoip_data, GEOIP_CATEGORIES)
-    print(f'  {len(geoip_nets)} IPv4 CIDRs ({sorted(GEOIP_CATEGORIES)})', file=sys.stderr)
+    geoip_nets = parse_geoip(geoip_data, GEOIP_CATEGORIES, ip_version=ip_version)
+    print(f'  {len(geoip_nets)} IPv{ip_version} CIDRs ({sorted(GEOIP_CATEGORIES)})', file=sys.stderr)
     all_prefixes.extend(geoip_nets)
 
     # 3. RU-domain pool (geosite.dat + itdoginfo + v2fly) → DNS-resolve to IPs
@@ -324,30 +340,31 @@ def main():
     print(f'  {len(v2fly_domains)} domains from v2fly', file=sys.stderr)
 
     domains = list({*geosite_domains, *itdog_domains, *v2fly_domains})
-    print(f'  {len(domains)} unique domains to resolve...', file=sys.stderr)
+    print(f'  {len(domains)} unique domains to resolve ({rdtype})...', file=sys.stderr)
 
     resolved = 0
     with ThreadPoolExecutor(max_workers=50) as ex:
-        futures = {ex.submit(resolve_host, d): d for d in domains}
+        futures = {ex.submit(resolve_host, d, rdtype): d for d in domains}
         for fut in as_completed(futures):
             ips = fut.result()
             if ips:
                 resolved += 1
                 for ip in ips:
-                    all_prefixes.append(ip + '/32')
+                    all_prefixes.append(f'{ip}/{prefix_bits}')
     print(f'  Resolved {resolved}/{len(domains)} domains', file=sys.stderr)
 
-    # 4. local pyasn DB (BGP RIB snapshot) for RU+CN
-    print('Reading local pyasn DB...', file=sys.stderr)
-    db_prefixes = parse_local_db(script_dir, LOCAL_DB_COUNTRIES)
-    print(f'  {len(db_prefixes)} IPv4 prefixes ({sorted(LOCAL_DB_COUNTRIES)})', file=sys.stderr)
-    all_prefixes.extend(str(p) for p in db_prefixes)
+    if not v6_mode:
+        # 4. local pyasn DB (BGP RIB snapshot) for RU+CN — IPv4 only
+        print('Reading local pyasn DB...', file=sys.stderr)
+        db_prefixes = parse_local_db(script_dir, LOCAL_DB_COUNTRIES)
+        print(f'  {len(db_prefixes)} IPv4 prefixes ({sorted(LOCAL_DB_COUNTRIES)})', file=sys.stderr)
+        all_prefixes.extend(str(p) for p in db_prefixes)
 
     result = sorted(
         aggregate_prefixes(all_prefixes),
         key=lambda x: ipaddress.ip_network(x),
     )
-    print(f'Extra sources total: {len(result)} aggregated prefixes', file=sys.stderr)
+    print(f'Extra sources total: {len(result)} aggregated IPv{ip_version} prefixes', file=sys.stderr)
     for prefix in result:
         print(prefix)
 

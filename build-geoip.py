@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Pack an IPv4 CIDR list into a v2ray/xray geoip.dat with a single tag.
+"""Pack a CIDR list into a v2ray/xray geoip.dat with a single tag.
 
-Usage: build-geoip.py <cidr_list> <output.dat> [tag]
+Usage: build-geoip.py <cidr_list> <output.dat> [tag] [--v4|--v6]
+  --v4   Pack only IPv4 networks.
+  --v6   Pack only IPv6 networks.
+  (default: pack both IPv4 and IPv6)
 Default tag is 'rucn'. The tag is upper-cased (v2ray convention).
 
 Wire format (protobuf):
@@ -46,11 +49,16 @@ def encode_geoip(tag, nets):
 
 
 def main():
-    if len(sys.argv) < 3:
+    args = sys.argv[1:]
+    v4_only = '--v4' in args
+    v6_only = '--v6' in args
+    args = [a for a in args if a not in ('--v4', '--v6')]
+
+    if len(args) < 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
-    src, dst = sys.argv[1], sys.argv[2]
-    tag = (sys.argv[3] if len(sys.argv) > 3 else 'rucn').upper()
+    src, dst = args[0], args[1]
+    tag = (args[2] if len(args) > 2 else 'rucn').upper()
 
     nets = []
     with open(src) as f:
@@ -62,14 +70,19 @@ def main():
                 net = ipaddress.ip_network(line, strict=False)
             except ValueError:
                 continue
-            if isinstance(net, ipaddress.IPv4Network):
-                nets.append(net)
+            if v4_only and not isinstance(net, ipaddress.IPv4Network):
+                continue
+            if v6_only and not isinstance(net, ipaddress.IPv6Network):
+                continue
+            nets.append(net)
 
     payload = _len_delim(1, encode_geoip(tag, nets))
     with open(dst, 'wb') as f:
         f.write(payload)
 
-    print(f'{dst}: tag={tag} prefixes={len(nets)} bytes={len(payload)}', file=sys.stderr)
+    n4 = sum(1 for n in nets if isinstance(n, ipaddress.IPv4Network))
+    n6 = len(nets) - n4
+    print(f'{dst}: tag={tag} IPv4={n4} IPv6={n6} bytes={len(payload)}', file=sys.stderr)
 
 
 if __name__ == '__main__':
